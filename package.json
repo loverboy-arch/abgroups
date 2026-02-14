@@ -1,7 +1,7 @@
 {
   "name": "ab-groups-bot",
-  "version": "1.1.0",
-  "description": "AB GROUP’S Discord bot with slash commands, risk calculator, and MacroDroid / Telegram alerts",
+  "version": "2.0.0",
+  "description": "AB GROUP’S pro trading Discord bot with webhook alerts, DB logging, and advanced features",
   "main": "index.js",
   "scripts": {
     "start": "node index.js"
@@ -12,9 +12,13 @@
     "discord.js": "^14.16.0",
     "dotenv": "^16.3.1",
     "express": "^4.18.2",
-    "node-telegram-bot-api": "^0.61.0"
+    "node-telegram-bot-api": "^0.61.0",
+    "@supabase/supabase-js": "^2.24.0",
+    "axios": "^1.6.0",
+    "body-parser": "^1.20.2"
   },
   "engines": {
     "node": ">=18.0.0"
   }
 }
+
