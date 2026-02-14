@@ -1,0 +1,20 @@
+{
+  "name": "ab-groups-bot",
+  "version": "1.1.0",
+  "description": "AB GROUP’S Discord bot with slash commands, risk calculator, and MacroDroid / Telegram alerts",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js"
+  },
+  "author": "AB GROUP’S",
+  "license": "MIT",
+  "dependencies": {
+    "discord.js": "^14.16.0",
+    "dotenv": "^16.3.1",
+    "express": "^4.18.2",
+    "node-telegram-bot-api": "^0.61.0"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}
