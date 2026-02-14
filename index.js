@@ -1,121 +1,97 @@
-require("dotenv").config();
-const { Client, GatewayIntentBits, REST, Routes, SlashCommandBuilder, EmbedBuilder } = require("discord.js");
-const express = require("express");
-const TelegramBot = require("node-telegram-bot-api");
+require('dotenv').config();
+const { Client, GatewayIntentBits, EmbedBuilder } = require('discord.js');
+const TelegramBot = require('node-telegram-bot-api');
+const express = require('express');
+const bodyParser = require('body-parser');
+const { createClient } = require('@supabase/supabase-js');
 
-// ============================
-// DISCORD BOT SETUP
-// ============================
-const client = new Client({
-  intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMessages, GatewayIntentBits.MessageContent]
+// ---------------- CONFIG ----------------
+const {
+  DISCORD_TOKEN,
+  ALERT_CHANNEL_ID,
+  TELEGRAM_TOKEN,
+  SUPABASE_URL,
+  SUPABASE_KEY,
+  WEBHOOK_SECRET,
+  PORT
+} = process.env;
+
+// ---------------- DISCORD ----------------
+const client = new Client({ intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMessages] });
+let discordChannel;
+
+client.once('ready', async () => {
+  console.log(`Discord bot logged in as ${client.user.tag}`);
+  discordChannel = await client.channels.fetch(ALERT_CHANNEL_ID);
+  if (!discordChannel) console.log('Discord alert channel not found!');
 });
 
-const discordChannelId = process.env.ALERT_CHANNEL_ID;
-client.login(process.env.DISCORD_TOKEN);
+// ---------------- TELEGRAM ----------------
+const tgBot = new TelegramBot(TELEGRAM_TOKEN, { polling: true });
 
-client.once('ready', () => {
-  console.log(`✅ Bot Online: ${client.user.tag}`);
+// Listen to Telegram messages and forward to Discord + DB
+tgBot.on('message', async (msg) => {
+  const chatId = msg.chat.id;
+  const text = msg.text || '';
+  
+  // Optional: filter signals only
+  if (!text.toLowerCase().includes('buy') && !text.toLowerCase().includes('sell')) return;
 
-  // Register slash commands (guild commands for instant update)
-  const commands = [
-    new SlashCommandBuilder()
-      .setName('risk')
-      .setDescription('Calculate risk & position size')
-      .addNumberOption(opt => opt.setName('capital').setDescription('Your total capital').setRequired(true))
-      .addNumberOption(opt => opt.setName('riskpercent').setDescription('Risk percentage').setRequired(true))
-      .addNumberOption(opt => opt.setName('stoploss').setDescription('Stop-loss points').setRequired(true))
-      .addStringOption(opt => opt.setName('symbol').setDescription('Trading symbol (e.g. NIFTY)').setRequired(false))
-  ].map(cmd => cmd.toJSON());
+  // Discord embed
+  const embed = new EmbedBuilder()
+    .setTitle('Telegram Signal')
+    .setDescription(text)
+    .setColor(text.toLowerCase().includes('buy') ? 0x00ff00 : 0xff0000)
+    .setTimestamp();
 
-  const rest = new REST({ version: '10' }).setToken(process.env.DISCORD_TOKEN);
-  rest.put(Routes.applicationGuildCommands(client.user.id, process.env.GUILD_ID), { body: commands })
-    .then(() => console.log('✅ Slash commands registered'))
-    .catch(console.error);
+  if (discordChannel) discordChannel.send({ embeds: [embed] });
+
+  // Save to Supabase
+  await supabase.from('signals').insert([{ source: 'Telegram', content: text, created_at: new Date() }]);
 });
 
-// ============================
-// EXPRESS SERVER FOR MACRODROID WEBHOOKS
-// ============================
+// ---------------- SUPABASE ----------------
+const supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
+
+// ---------------- EXPRESS WEBHOOK ----------------
 const app = express();
-app.use(express.json());
+app.use(bodyParser.json());
 
-app.post("/webhook", async (req, res) => {
+app.post('/webhook', async (req, res) => {
   try {
-    const channel = await client.channels.fetch(discordChannelId);
-
-    const embed = new EmbedBuilder()
-      .setTitle("📈 AB GROUP’S Alert")
-      .setDescription(req.body.message || "Alert Triggered")
-      .setColor(0x00C2FF)
-      .addFields(
-        { name: "Info", value: req.body.message || "N/A", inline: true },
-        { name: "Time", value: new Date().toLocaleString(), inline: true }
-      )
-      .setFooter({ text: "AB GROUP’S – Trade Smart" })
-      .setTimestamp();
-
-    await channel.send({ embeds: [embed] });
-    res.sendStatus(200);
-  } catch (err) {
-    console.error("Webhook error:", err);
-    res.sendStatus(500);
-  }
-});
-
-app.listen(process.env.PORT || 3000, () => console.log("🌐 Webhook server running"));
-
-// ============================
-// SLASH COMMAND HANDLER
-// ============================
-client.on('interactionCreate', async (interaction) => {
-  if (!interaction.isChatInputCommand()) return;
-
-  if (interaction.commandName === 'risk') {
-    const capital = interaction.options.getNumber('capital');
-    const riskPercent = interaction.options.getNumber('riskpercent');
-    const stopLoss = interaction.options.getNumber('stoploss');
-    const symbol = interaction.options.getString('symbol') || "N/A";
-
-    const riskAmount = (capital * riskPercent) / 100;
-    const positionSize = riskAmount / stopLoss;
-
-    const embed = new EmbedBuilder()
-      .setTitle("📊 AB GROUP’S Risk Calculator")
-      .setColor(0xFFD700)
-      .addFields(
-        { name: "🏦 Capital", value: capital.toLocaleString(), inline: true },
-        { name: "🎯 Risk %", value: `${riskPercent}%`, inline: true },
-        { name: "💸 Risk Amount", value: riskAmount.toFixed(2), inline: true },
-        { name: "⚡ Position Size", value: positionSize.toFixed(2), inline: true },
-        { name: "📌 Symbol", value: symbol, inline: true }
-      )
-      .setFooter({ text: "AB GROUP’S – Trade Smart" })
-      .setTimestamp();
-
-    await interaction.reply({ embeds: [embed] });
-  }
-});
-
-// ============================
-// TELEGRAM BOT SETUP (Optional)
-// ============================
-if (process.env.TELEGRAM_TOKEN) {
-  const telegramBot = new TelegramBot(process.env.TELEGRAM_TOKEN, { polling: true });
-
-  telegramBot.on('message', async (msg) => {
-    if (!msg.text) return;
-
-    try {
-      const channel = await client.channels.fetch(discordChannelId);
-      const embed = new EmbedBuilder()
-        .setTitle("📈 AB GROUP’S Alert")
-        .setDescription(msg.text)
-        .setColor(0x00C2FF)
-        .setTimestamp();
-
-      await channel.send({ embeds: [embed] });
-    } catch (error) {
-      console.error("Telegram forwarding error:", error);
+    // Security check
+    if (req.headers['x-webhook-secret'] !== WEBHOOK_SECRET) {
+      return res.status(401).send('Unauthorized');
     }
-  });
-}
+
+    const data = req.body;
+    const symbol = data.symbol || 'Unknown';
+    const action = data.action || 'Unknown';
+    const price = data.price || 'N/A';
+    const source = data.source || 'TradingView';
+
+    // Discord embed
+    const embed = new EmbedBuilder()
+      .setTitle(`${symbol} Signal`)
+      .setDescription(`**Action:** ${action}\n**Price:** ${price}\n**Source:** ${source}`)
+      .setColor(action.toLowerCase() === 'buy' ? 0x00ff00 : 0xff0000)
+      .setTimestamp();
+
+    if (discordChannel) discordChannel.send({ embeds: [embed] });
+
+    // Save to Supabase
+    await supabase.from('signals').insert([{ symbol, action, price, source, created_at: new Date() }]);
+
+    res.status(200).send('Signal received ✅');
+  } catch (err) {
+    console.error(err);
+    res.status(500).send('Server error ❌');
+  }
+});
+
+app.listen(PORT || 3000, () => {
+  console.log(`Webhook listener running on port ${PORT || 3000}`);
+});
+
+// ---------------- LOGIN DISCORD ----------------
+client.login(DISCORD_TOKEN);
